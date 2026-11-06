@@ -24,6 +24,12 @@ the duplicate check; you do the research. Nothing is emailed or submitted.
    relevant team lead shown on an official page.
    - Never guess an address from a naming pattern, and never use scraped
      third-party contact databases.
+   - If a contact finder is connected (an Apollo or Hunter connector), it may
+     fill gaps the official page leaves. Prefer a role mailbox or a recruiter or
+     engineering lead at the company. Say in `note` where the address came from
+     ("apollo, verified" or "apollo, unverified"), and skip any address the
+     tool marks as guessed or invalid. Never bulk-pull people into the sheet:
+     one contact per company.
    - No contact found on an official page: leave the company out. A lead
      without a contact is not written.
    - Put the source and any doubt in `note` (for example "email from careers
