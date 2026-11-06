@@ -41,7 +41,7 @@ plugins:
     #   note: "Note"
     #   stage: "Stage"
     #   date: "Application Date"
-    # defaults: { stage: "Pending" }
+    # defaults: { stage: "..." }   # optional fallback per field; unset keeps new rows blank
 
   # ── gmail (ingest) ── pull job leads from a Gmail label into your pipeline. (feature #810, ported from PR #1203)
   # Needs GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN in .env.

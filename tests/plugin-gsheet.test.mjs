@@ -52,7 +52,7 @@ try {
     return json({});
   };
   const ctx = (dryRun) => ({
-    settings: { spreadsheet_id: 'SID', tab: 'Sheet1', columns: COLUMNS, defaults: { stage: 'Pending' } },
+    settings: { spreadsheet_id: 'SID', tab: 'Sheet1', columns: COLUMNS },
     env: { GSHEET_CLIENT_ID: 'a', GSHEET_CLIENT_SECRET: 'b', GSHEET_REFRESH_TOKEN: 'c' },
     fetch: fakeFetch, log: () => {}, dryRun, dataRoot: dir,
   });
@@ -67,8 +67,8 @@ try {
   const put = calls.find((c) => c.method === 'PUT');
   const body = put && JSON.parse(put.body);
   check(r.pushed === 1 && body?.values?.length === 1, 'real run: duplicates skipped, one row written', `real run ${JSON.stringify(r)}`);
-  check(JSON.stringify(body?.values?.[0]) === JSON.stringify(['Acme Robotics', 'Munich, Germany', 'Pending', '', 'ai swe', 'jobs@acme.example', 'from careers page']),
-    'row follows the sheet header order, stage defaulted, date blank', `row ${JSON.stringify(body?.values?.[0])}`);
+  check(JSON.stringify(body?.values?.[0]) === JSON.stringify(['Acme Robotics', 'Munich, Germany', '', '', 'ai swe', 'jobs@acme.example', 'from careers page']),
+    'row follows the sheet header order, stage and date blank', `row ${JSON.stringify(body?.values?.[0])}`);
   check(decodeURIComponent(put?.url || '').includes('!A6:G6') && put?.url.includes('valueInputOption=RAW'),
     'written one row past the last company (row 6), RAW input', `put url ${put?.url}`);
   check(!existsSync(leadsPath) && existsSync(join(dir, 'data', 'sheet-leads.pushed.json')), 'leads file archived after a real run', 'leads file not archived');

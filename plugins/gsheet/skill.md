@@ -34,9 +34,9 @@ the duplicate check; you do the research. Nothing is emailed or submitted.
    [{ "company": "Acme GmbH", "country": "Munich, Germany", "position": "ai swe",
       "contact": "jobs@acme.example (careers page)", "note": "seed-stage, ~30 staff" }]
    ```
-   Fields: `company` and `contact` required; `country`, `position`, `note`,
-   `stage`, `date` optional. `stage` defaults to `settings.defaults.stage`;
-   leave `date` empty (it is the application date).
+   Fields: `company` and `contact` required; `country`, `position` and `note`
+   optional. Leave `stage` and `date` out: a new row has a blank Stage and no
+   application date. The user fills them in once they apply or hear back.
 5. **Preview.** `node plugins.mjs run gsheet --dry-run` prints the rows it would
    add and the companies it skips as already listed. Show the user the table.
 6. **Write only after the user confirms:** `node plugins.mjs run gsheet`. The
@@ -64,7 +64,7 @@ the duplicate check; you do the research. Nothing is emailed or submitted.
          position: "Position"
          contact: "URL/Email"
          note: "Note"
-       defaults: { stage: "Pending" }
+       # defaults: { stage: "..." }   # optional fallback per field; unset keeps new rows blank
    ```
 
 `export` ignores the tracker; `data/applications.md` is not read or changed.
