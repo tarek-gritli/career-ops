@@ -1,0 +1,13 @@
+{
+  "id": "gsheet",
+  "name": "Google Sheets leads",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Append reviewed company leads (contact emails or application URLs) to your own Google Sheet, skipping companies already in it.",
+  "hooks": ["export"],
+  "requiredEnv": ["GSHEET_CLIENT_ID", "GSHEET_CLIENT_SECRET", "GSHEET_REFRESH_TOKEN"],
+  "allowedHosts": ["oauth2.googleapis.com", "sheets.googleapis.com"],
+  "skill": "skill.md",
+  "humanInTheLoop": true,
+  "homepage": "https://developers.google.com/sheets/api"
+}
