@@ -26,16 +26,17 @@ plugins:
   notion:
     enabled: false
 
-  # ── gsheet (export) ── append researched company leads (contact email / application URL) to your Google Sheet.
+  # ── gsheet (export) ── add researched company leads (contact email / application URL) to your Google Sheet.
   # Needs GSHEET_CLIENT_ID + GSHEET_CLIENT_SECRET + GSHEET_REFRESH_TOKEN in .env. Preview with
   # `node plugins.mjs run gsheet --dry-run`, then `node plugins.mjs run gsheet`. See plugins/gsheet/skill.md.
   gsheet:
     enabled: false
     # spreadsheet_id: "<id from the sheet URL>"
     # tab: "Sheet1"
+    # update_existing: false  # true: fill EMPTY cells of companies already listed instead of skipping them
     # columns:              # field: header text in row 1
     #   company: "Company"
-    #   contact: "Email / URL"
+    #   contact: "Email / URL"   # or map email: / website: as separate columns instead
     #   country: "Country"
     #   position: "Position"
     #   note: "Note"

@@ -40,13 +40,32 @@ the duplicate check; you do the research. Nothing is emailed or submitted.
    [{ "company": "Acme GmbH", "country": "Munich, Germany", "position": "ai swe",
       "contact": "jobs@acme.example (careers page)", "note": "seed-stage, ~30 staff" }]
    ```
-   Fields: `company` and `contact` required; `country`, `position` and `note`
-   optional. Leave `stage` and `date` out: a new row has a blank Stage and no
-   application date. The user fills them in once they apply or hear back.
+   Fields: `company` required, plus a way to reach them: `contact`, or `email`
+   and/or `website`. The contact must hold an email address or an `https://` URL
+   (`contact` may carry a trailing source note, as above). If the sheet has
+   separate Email and Website columns (see Setup), give `email` and `website`
+   instead of `contact`; otherwise they are joined into the one contact cell.
+   `country`, `position` and `note` are optional. Leave `stage` and `date` out: a
+   new row has a blank Stage and no application date. The user fills them in once
+   they apply or hear back.
 5. **Preview.** `node plugins.mjs run gsheet --dry-run` prints the rows it would
-   add and the companies it skips as already listed. Show the user the table.
+   add and the companies it skips as already listed. A company counts as listed
+   when its name matches, or when its website/email domain matches a row's
+   (free-mail and job-board hosts never count). A same-named company with a
+   different domain is added as new and flagged. Show the user the table.
 6. **Write only after the user confirms:** `node plugins.mjs run gsheet`. The
-   leads file is renamed to `sheet-leads.pushed.json` afterwards.
+   leads file is renamed to `sheet-leads.pushed.json` only after every write
+   succeeded; if a write fails the run stops with Google's error and the leads
+   file stays for a retry.
+
+## Filling rows that already exist
+
+Set `update_existing: true` to enrich companies that are already in the sheet
+instead of skipping them (for example, adding a contact found later). Only
+**empty** cells are filled, nothing is overwritten. The one exception keeps the
+old text: when the contact cell holds a link but no email and the lead has an
+email, the email is put in front (`email, link`). `--dry-run` lists each row it
+would fill. Stage and Date are never touched.
 
 ## Setup
 
@@ -62,13 +81,16 @@ the duplicate check; you do the research. Nothing is emailed or submitted.
        enabled: true
        spreadsheet_id: "<the id in the sheet URL>"
        tab: "Sheet1"
+       update_existing: false   # true: fill EMPTY cells of companies already listed
        columns:            # field: header text in row 1 of the tab
          company: "Company"
          country: "Country"
          stage: "Stage"
          date: "Application Date"
          position: "Position"
-         contact: "URL/Email"
+         contact: "URL/Email"     # one cell for email and/or link, or map the two below instead
+         # email: "Email"
+         # website: "Website"
          note: "Note"
        # defaults: { stage: "..." }   # optional fallback per field; unset keeps new rows blank
    ```

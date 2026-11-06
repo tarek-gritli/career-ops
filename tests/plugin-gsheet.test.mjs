@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { pass, fail, ROOT } from './helpers.mjs';
-import { colLetter, resolveColumns, isKnownCompany, parseLeads } from '../plugins/gsheet/_sheet.mjs';
+import { colLetter, resolveColumns, isKnownCompany, parseLeads, domainsOf, matchLead, fillsFor } from '../plugins/gsheet/_sheet.mjs';
 
 console.log('\nplugins — gsheet');
 
@@ -48,7 +48,7 @@ try {
     const json = (o) => ({ json: async () => o });
     if (u.includes('oauth2')) return json({ access_token: 'tok' });
     if (u.includes('!1:1')) return json({ values: [HEADER] });
-    if (u.includes('!A:A')) return json({ values: [['F'], ['NVISO (Germany)'], ['Matchory'], [], ['Bayshore']] });
+    if (u.includes('!A:G')) return json({ values: [HEADER, ['NVISO (Germany)'], ['Matchory'], [], ['Bayshore']] });
     return json({});
   };
   const ctx = (dryRun) => ({
@@ -74,4 +74,108 @@ try {
   check(!existsSync(leadsPath) && existsSync(join(dir, 'data', 'sheet-leads.pushed.json')), 'leads file archived after a real run', 'leads file not archived');
 } finally {
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ── contact validation: an email or an https URL, not just any text ──────────
+check(throws(() => parseLeads([{ company: 'X', contact: 'see our site' }])), 'contact with no email or https URL is rejected', 'unreachable contact accepted');
+check(!throws(() => parseLeads([{ company: 'X', contact: 'jobs@x.example (careers page)' }])), 'email with a trailing source note is accepted', 'annotated email rejected');
+check(throws(() => parseLeads([{ company: 'X', email: 'not-an-email' }])), 'an invalid email field is rejected', 'bad email accepted');
+check(throws(() => parseLeads([{ company: 'X', website: 'http://x.example' }])), 'a plain-http website is rejected', 'http website accepted');
+check(parseLeads([{ company: 'X', email: 'a@x.example', website: 'https://x.example' }])[0].contact === 'a@x.example, https://x.example',
+  'email + website compose the contact cell', 'composed contact wrong');
+
+// ── identity: domains decide, names are the fallback ─────────────────────────
+const doms = domainsOf('kaan@invertix.ai (CTO), https://www.invertix.ai/jobs', 'x@gmail.com', 'https://acme.greenhouse.io/jobs/1', 'https://careers.foo.co.uk');
+check(doms.size === 2 && doms.has('invertix.ai') && doms.has('foo.co.uk'), 'domainsOf: company domains only (no free mail or job boards)', `domains ${[...doms]}`);
+
+const rows = [
+  { name: 'Hera', sheetRow: 2, domains: new Set(['hera.video']) },
+  { name: 'Acme', sheetRow: 3, domains: new Set(['acme.example']) },
+  { name: 'Nodomain Inc', sheetRow: 4, domains: new Set() },
+];
+check(matchLead({ company: 'Other Name', contact: 'jobs@acme.example' }, rows)?.via === 'domain', 'same domain under another name is a duplicate', 'domain match missed');
+const poss = matchLead({ company: 'Hera', contact: 'https://hera.fr' }, rows);
+check(poss && 'possible' in poss && !('row' in poss), 'same name, different domain is not skipped (only flagged)', `hera ${JSON.stringify(poss && Object.keys(poss))}`);
+check(matchLead({ company: 'Nodomain Inc GmbH', contact: 'https://n.example' }, rows)?.via === 'name', 'no domain on the sheet row: the name decides', 'name fallback missed');
+check(matchLead({ company: 'Brand New', contact: 'https://new.example' }, rows) === null, 'unknown company and domain is new', 'false duplicate');
+
+// ── filling existing rows: empty cells only ──────────────────────────────────
+const fidx = { company: 0, position: 4, contact: 5, note: 6 };
+const fl = { company: 'Acme', position: 'swe', contact: 'a@acme.example (CTO)', note: 'n' };
+const fills = fillsFor(fl, fidx, ['Acme', '', '', '', '', 'https://acme.example', '']);
+check(fills.length === 3 && fills.find((f) => f.field === 'contact')?.value === 'a@acme.example (CTO), https://acme.example',
+  'fillsFor: empty cells filled, a link-only contact gains the email in front', `fills ${JSON.stringify(fills)}`);
+check(fillsFor(fl, fidx, ['Acme', '', '', '', 'devops', 'x@acme.example', 'kept']).length === 0,
+  'fillsFor: filled cells and a contact that already has an email are never overwritten', 'overwrote existing data');
+
+// ── export hook: write failures, API errors, update mode, separate columns ───
+const mkDir = () => { const d = mkdtempSync(join(tmpdir(), 'career-ops-gsheet-')); mkdirSync(join(d, 'data')); return d; };
+const mkEnv = { GSHEET_CLIENT_ID: 'a', GSHEET_CLIENT_SECRET: 'b', GSHEET_REFRESH_TOKEN: 'c' };
+const reply = (o, ok = true, status = 200) => ({ ok, status, json: async () => o });
+/** Fake Sheets API: `sheet` rows, optional failure per request kind. */
+const fakeApi = (sheet, { putFails = false, readFails = false, tokenFails = false } = {}) => {
+  const calls = [];
+  const fetch = async (url, opts = {}) => {
+    const u = decodeURIComponent(String(url));
+    calls.push({ url: u, method: opts.method || 'GET', body: opts.body });
+    if (u.includes('oauth2')) return tokenFails ? reply({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.' }, false, 400) : reply({ access_token: 'tok' });
+    if (readFails) return reply({ error: { message: 'Requested entity was not found.' } }, false, 404);
+    if (opts.method === 'PUT' && putFails) return reply({ error: { message: 'The caller does not have permission' } }, false, 403);
+    if (u.includes('!1:1')) return reply({ values: [sheet[0]] });
+    if (u.includes('values:batchUpdate') || opts.method === 'PUT') return reply({});
+    return reply({ values: sheet });
+  };
+  return { fetch, calls };
+};
+const runExport = async (dir, api, settings, leads, dryRun = false) => {
+  writeFileSync(join(dir, 'data', 'sheet-leads.json'), JSON.stringify(leads));
+  return plugin.export({}, { settings: { spreadsheet_id: 'SID', tab: 'Sheet1', columns: COLUMNS, ...settings }, env: mkEnv, fetch: api.fetch, log: () => {}, dryRun, dataRoot: dir });
+};
+const rejects = async (p) => { try { await p; return ''; } catch (e) { return String(e.message); } };
+
+let d2 = mkDir();
+try {
+  const lead = [{ company: 'Acme Robotics', contact: 'jobs@acme.example' }];
+  let msg = await rejects(runExport(d2, fakeApi([HEADER], { putFails: true }), {}, lead));
+  check(msg.includes('403') && msg.includes('does not have permission'), 'a failed write throws with Google\'s message and status', `write error: ${msg}`);
+  check(existsSync(join(d2, 'data', 'sheet-leads.json')) && !existsSync(join(d2, 'data', 'sheet-leads.pushed.json')),
+    'a failed write leaves the leads file for a retry', 'leads file archived after a failed write');
+
+  msg = await rejects(runExport(d2, fakeApi([HEADER], { readFails: true }), {}, lead));
+  check(msg.includes('Requested entity was not found') && !msg.includes('no header'), 'a failed read reports the API error, not "no header"', `read error: ${msg}`);
+
+  msg = await rejects(runExport(d2, fakeApi([HEADER], { tokenFails: true }), {}, lead));
+  check(msg.includes('Token has been expired or revoked'), 'a failed token refresh reports why', `token error: ${msg}`);
+
+  // update mode
+  const sheet = [HEADER, ['Acme', 'Munich', '', '', '', 'https://acme.example', ''], ['Hera', 'Berlin', '', '', '', 'https://hera.video', '']];
+  const leads = [
+    { company: 'Acme', position: 'swe', contact: 'jobs@acme.example (CTO)', note: 'hello' },
+    { company: 'Hera', contact: 'https://hera.fr' },
+  ];
+  let api = fakeApi(sheet);
+  let r = await runExport(d2, api, {}, leads);
+  check(r.pushed === 1 && r.updated === 0 && !api.calls.some((c) => c.url.includes('batchUpdate')),
+    'default: an already-listed company is skipped, same-named other company added', `default ${JSON.stringify(r)}`);
+
+  api = fakeApi(sheet);
+  r = await runExport(d2, api, { update_existing: true }, leads);
+  const bu = api.calls.find((c) => c.url.includes('values:batchUpdate'));
+  const data = bu && JSON.parse(bu.body).data;
+  check(r.updated === 3 && data?.some((x) => x.range === "'Sheet1'!F2" && x.values[0][0] === 'jobs@acme.example (CTO), https://acme.example')
+    && data?.some((x) => x.range === "'Sheet1'!E2") && data?.some((x) => x.range === "'Sheet1'!G2"),
+  'update_existing: fills empty cells of a listed company in place', `update ${JSON.stringify(r)} ${bu?.body}`);
+  check(JSON.parse(bu.body).valueInputOption === 'RAW' && api.calls.find((c) => c.method === 'PUT' && c.url.includes('!A4:G4')),
+    'update_existing: new rows still go one past the last row, RAW', 'update/append request wrong');
+
+  // separate email / website columns
+  const H2 = ['Company', 'Email', 'Website'];
+  api = fakeApi([H2]);
+  await runExport(d2, api, { columns: { company: 'Company', email: 'Email', website: 'Website' } },
+    [{ company: 'Zed', email: 'a@zed.example', website: 'https://zed.example' }]);
+  const put = api.calls.find((c) => c.method === 'PUT');
+  check(JSON.stringify(JSON.parse(put.body).values[0]) === JSON.stringify(['Zed', 'a@zed.example', 'https://zed.example']),
+    'separate email and website columns are filled when mapped', `separate cols ${put?.body}`);
+} finally {
+  rmSync(d2, { recursive: true, force: true });
 }
