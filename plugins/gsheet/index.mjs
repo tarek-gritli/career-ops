@@ -13,7 +13,6 @@
 //     spreadsheet_id: "<id from the sheet URL>"
 //     tab: "Sheet1"
 //     columns: { company: "Company", contact: "Email / URL", country: "Country", position: "Position", note: "Note", stage: "Stage", date: "Date" }
-//     defaults: { stage: "Pending" }
 // Add to .env: GSHEET_CLIENT_ID, GSHEET_CLIENT_SECRET, GSHEET_REFRESH_TOKEN.
 // Run:  node plugins.mjs run gsheet --dry-run   then   node plugins.mjs run gsheet
 
